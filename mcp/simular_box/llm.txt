@@ -1,0 +1,237 @@
+
+简短进度：注册流程和接入文档都查到了，下面写指南。
+
+下面是在 Claude Code 里配置 box 的完整步骤。来源是 box.simular.ai 的页面、官方文档，还有你本机现在的配置。
+
+一、注册 Simular 账号
+打开 https://box.simular.ai ，点右上角 Sign in。
+选 Continue with Google 或 Continue with GitHub。只有这两种登录方式，没有邮箱密码注册。
+第一次登录就会自动建好账号，默认是 free plan，自带两样东西： 
+一个 Simular API key（给 agent 用的额度）
+一台云桌面：Ubuntu 24.04 + XFCE，1280×800，带 Chrome 和持久化 shell
+每个账号只有一台 box，第一次连上就能用，不用手动创建。box 本身免费，里面的模型调用扣账号的每日 credits。用完了去 Billing 页面加额度或升级套餐。
+也可以先不注册：第一次在 Claude Code 里授权时会跳到同一个登录页，注册和授权一步完成。
+
+二、把 box 加进 Claude Code
+方式 A：用 claude mcp add（推荐）
+
+claude mcp add --transport http --scope user box https://mcp.box.simular.ai/mcp
+官方文档里的命令没带 --scope，那样默认是 local，只在当前项目生效。
+加 --scope user 后所有项目都能用。你现在就是这种配置：`~/.claude.json` 顶层 mcpServers.box 写的是 {"type": "http", "url": "https://mcp.box.simular.ai/mcp"}。
+方式 B：官方一键安装器
+
+npx @simular-ai/box connect --client claude-code
+它会检测本机装了哪些 AI 应用，再把 box 加进去。不带 --client 就让你逐个选。
+
+三、授权（OAuth，不用粘贴 key）
+在终端运行 claude，进去后输入 /mcp。不要带参数：你之前输的 /mcp box 不是有效写法，所以报错了。
+在列表里选 box → Authenticate。
+浏览器会打开 Simular 登录页。用 Google 或 GitHub 登录后，在授权页选好访问有效天数，点 Approve。
+回到 Claude Code，box 显示为已连接。
+授权过期后会提示 signed out，按同样步骤再授权一次就行。已连接的应用和 key 都能在  查看和撤销。
+
+桌面版 Claude Code（Code 标签页）：它和 CLI 共用 ~/.claude.json 里的 MCP 配置，你这台机器就是在 CLI 加完后桌面版直接能用。如果桌面版显示 box 没授权，就在终端用 claude 按上面的步骤授权一次。
+
+备用方式（个人 key）：只有应用没法走浏览器登录时才用。在 /keys 页面生成一个 cb_... 开头的 key，作为请求头加进配置：
+
+claude mcp add --transport http --scope user box https://mcp.box.simular.ai/mcp --header "Authorization: Bearer cb_你的key"
+这个 key 只显示一次，会以明文写进 ~/.claude.json。千万别提交到 git，也不要贴进聊天。上一条 HN 第 5 名讲的就是这类泄露。
+
+四、验证
+claude mcp list
+看到 box 是 connected 就好了。开一个新对话，在里面说"用 box 打开某个网站"，就会调用 mcp__box__* 工具，比如刚才抓 HN 用的 browser_fetch。
+
+五、排错和卸载
+npx @simular-ai/box doctor
+这个命令检查各个应用里的配置，确认服务端点能连通，发现问题会给出修复方法。常见问题：
+
+授权后看不到 box 工具：开新对话。
+浏览器提示 "Can't connect this agent"：重新登录；还不行就删掉 box 再加一次。
+提示 credits 用完：去 Billing 页面加额度。
+要在 claude -p 这类无人值守的场景里用：看  。
+支持邮箱：
+卸载用下面两条中的一条：
+
+claude mcp remove box --scope user
+npx @simular-ai/box remove
+-------
+
+
+把这个改写为一个给 agent 看的 llm.txt
+
+…
+已改写为供 agent 执行的指南，包含操作顺序、授权边界、成功标准和排错分支，移除了本机特定描述。
+
+
+llm.txt
+文档
+
+
+
+
+# Simular box：Claude Code 接入指南
+
+> 供 AI agent 执行的操作指南。目标：将 Simular box 作为远程 HTTP MCP 服务接入 Claude Code，完成授权并验证工具可用。
+
+本文由用户提供的指南改写，未重新联网验证。登录方式、套餐、额度和客户端行为可能变化；遇到差异时核对官方文档及当前客户端帮助。
+
+## 服务与入口
+
+- 产品主页：https://box.simular.ai
+- MCP endpoint：https://mcp.box.simular.ai/mcp
+- MCP 服务名：box
+- Transport：http
+- 推荐配置范围：user（所有项目可用）
+- 账号连接与 key 管理：https://box.simular.ai/keys
+- 无人值守文档：https://box.simular.ai/docs/headless.md
+- 支持邮箱：support@simular.ai
+
+## 执行约定
+
+- 默认使用 OAuth，不要求用户粘贴 API key。
+- 区分 agent 可执行的终端操作和必须由用户完成的账号登录、OAuth 同意操作。
+- 已有正确配置时直接验证和授权，不重复添加。
+- 保留其他 MCP 服务与无关配置；修改配置优先使用 Claude CLI。
+- 不输出完整配置文件、访问令牌或真实 key；不将凭据提交到 Git 或写入日志。
+- 不将配置成功视为授权成功，也不将连接成功视为工具执行成功。
+- 未实际执行的步骤不得报告为已完成。
+
+## 1. 检查环境
+
+执行：
+
+```bash
+claude --version
+claude mcp list
+```
+
+若找不到 claude，先解决 Claude Code CLI 安装或 PATH 问题。
+若参数不被当前版本识别，先查看对应命令的 --help。
+若已存在 box，确认其 endpoint 和 scope；正确则跳到授权或验证。
+若同名配置指向其他地址，先确认用途再修改。
+
+## 2. 账号准备
+
+用户可先打开 https://box.simular.ai，点击 Sign in，以 Google 或 GitHub 登录；也可在首次 OAuth 授权时完成注册。
+
+原始指南描述的账号行为：
+
+- 首次登录自动创建账号，默认 free plan，无邮箱密码注册入口。
+- 每个账号一台 box，首次连接即可使用，无须手动创建。
+- 云桌面环境为 Ubuntu 24.04 + XFCE，1280×800，带 Chrome 和持久化 shell。
+- 默认提供 Simular API key 和每日 credits；box 本身免费，模型调用消耗 credits。
+- 额度不足时由用户前往 Billing 查看或购买，套餐与费用以实际页面为准。
+
+区分账号提供的 Simular API key 与下文用于 MCP 备用认证的 cb_... 个人 key，不要混用。
+
+## 3. 添加 MCP 服务
+
+默认方法：
+
+```bash
+claude mcp add --transport http --scope user box https://mcp.box.simular.ai/mcp
+```
+
+--scope user 使配置对所有项目生效；省略 scope 时，原始指南所述默认值为 local，仅当前项目生效。
+
+预期在 ~/.claude.json 顶层 mcpServers 中出现以下条目。该片段仅用于核对，不得覆盖整个配置文件：
+
+```json
+{
+  "mcpServers": {
+    "box": {
+      "type": "http",
+      "url": "https://mcp.box.simular.ai/mcp"
+    }
+  }
+}
+```
+
+替代方法，二选一，无须重复执行：
+
+```bash
+npx @simular-ai/box connect --client claude-code
+```
+
+安装器会检测本机 AI 应用；不带 --client 时可交互选择客户端。
+
+## 4. OAuth 授权
+
+1. 在交互式终端启动 claude。
+2. 在 Claude Code 内输入 /mcp，不附加 box 参数。
+3. 在列表中选择 box，再选择 Authenticate。
+4. 用户在打开的浏览器中以 Google 或 GitHub 登录，选择授权有效天数并点击 Approve。
+5. 返回 Claude Code，确认 box 显示已连接。
+
+agent 如无法操作交互式界面，向用户提供上述最短操作步骤，并将状态标为等待用户授权。
+授权过期或显示 signed out 时，重复本节流程。
+用户可在 https://box.simular.ai/keys 查看和撤销应用连接及 key。
+
+桌面版 Claude Code 的 Code 标签页：原始指南中的本机实例与 CLI 共用 ~/.claude.json；不得将此视为所有版本的保证。先检查实际连接情况；若显示未授权，可尝试在 CLI 完成 OAuth 后重开桌面会话。
+
+## 5. 备用认证：个人 key
+
+仅当目标应用无法完成浏览器 OAuth 时使用。
+
+用户在 https://box.simular.ai/keys 生成 cb_... 开头的个人 key。key 只显示一次；以下为命令模板，执行前必须在本机安全替换占位符：
+
+```bash
+claude mcp add --transport http --scope user box https://mcp.box.simular.ai/mcp --header "Authorization: Bearer cb_REPLACE_WITH_PERSONAL_KEY"
+```
+
+若已存在同名服务，先核对并按当前 CLI 支持的方式更新，不盲目重复添加。
+该方式会将 key 明文保存在配置中；避免 shell 历史、终端输出、聊天及 Git 泄露。不要要求用户将真实 key 发到聊天。
+
+## 6. 验证
+
+执行：
+
+```bash
+claude mcp list
+```
+
+确认 box 连接正常后，新建一个 Claude Code 对话，让其使用 box 打开一个公开网站，例如 https://example.com。
+
+成功标准：
+
+1. box 配置存在，endpoint 正确。
+2. 授权完成，连接状态正常。
+3. 新会话能发现 box 的 MCP 工具，并成功完成一次只读操作。
+
+原始指南中的工具示例是 mcp__box__* / browser_fetch；实际名称以当前会话发现的工具为准，不假定示例一定存在。
+
+## 7. 排错
+
+优先运行：
+
+```bash
+npx @simular-ai/box doctor
+```
+
+- 配置成功但未登录：完成第 4 节 OAuth。
+- 授权后看不到工具：新建对话后再次检查。
+- 显示 signed out：重新授权。
+- 浏览器显示 Can't connect this agent：重新登录；仍失败时，记录现有 box 的 endpoint 和 scope，再移除并重新添加、授权。
+- credits 耗尽：告知用户前往 Billing 查看额度。
+- 需要 claude -p 等无人值守运行：先读取 https://box.simular.ai/docs/headless.md，按当前官方流程配置；不要假定交互式 OAuth 步骤可直接用于无人值守环境。
+- 仍无法连接：记录不含凭据的错误信息、客户端版本和诊断结果，再排查或由用户联系 support@simular.ai。
+
+## 8. 卸载
+
+仅在用户要求移除时执行。对于本指南创建的 user scope 配置：
+
+```bash
+claude mcp remove box --scope user
+```
+
+也可使用官方安装器：
+
+```bash
+npx @simular-ai/box remove
+```
+
+使用安装器时核对将受影响的客户端。移除本机 MCP 配置与撤销服务端授权是不同操作；如用户要求撤销连接或 key，还需在 /keys 页面完成。
+
+## 结果汇报
+
+简要报告：采用的配置方式和 scope、是否完成授权、是否连接正常、是否成功调用工具，以及仍需用户完成的操作。不要包含任何凭据。
